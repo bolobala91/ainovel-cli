@@ -138,6 +138,9 @@ func New(cfg bootstrap.Config, bundle assets.Bundle, options ...NewOption) (*Hos
 	modelreg.StartPricingRefresh(modelreg.DefaultRegistry(), bootstrap.DefaultConfigDir())
 
 	store := storepkg.NewStore(cfg.OutputDir)
+	// 派生 Markdown 的标签跟随作品语种：这些视图会被 novel_context 读回上下文，
+	// 标签语种和正文语种不一致会把模型往另一种语言上拽。
+	store.SetLanguage(cfg.NormalizedLanguage())
 	if err := store.Init(); err != nil {
 		return nil, fmt.Errorf("init store: %w", err)
 	}

@@ -46,7 +46,7 @@ func (s *OutlineStore) saveOutlineUnlocked(entries []domain.OutlineEntry) error 
 	if err := s.io.WriteJSONUnlocked("outline.json", entries); err != nil {
 		return err
 	}
-	return s.io.WriteMarkdownUnlocked("outline.md", renderOutline(entries))
+	return s.io.WriteMarkdownUnlocked("outline.md", renderOutline(entries, s.io.labels()))
 }
 
 // LoadOutline 从 outline.json 读取结构化大纲。
@@ -368,7 +368,7 @@ func (s *OutlineStore) saveLayeredViewsUnlocked(volumes []domain.VolumeOutline) 
 	if err := s.io.WriteJSONUnlocked("layered_outline.json", volumes); err != nil {
 		return err
 	}
-	if err := s.io.WriteMarkdownUnlocked("layered_outline.md", renderLayeredOutline(volumes)); err != nil {
+	if err := s.io.WriteMarkdownUnlocked("layered_outline.md", renderLayeredOutline(volumes, s.io.labels())); err != nil {
 		return err
 	}
 	if err := s.saveOutlineUnlocked(domain.FlattenOutline(volumes)); err != nil {
@@ -510,25 +510,25 @@ func (s *OutlineStore) LoadFoundationAudit() (*domain.FoundationAudit, error) {
 	return &a, nil
 }
 
-func renderLayeredOutline(volumes []domain.VolumeOutline) string {
+func renderLayeredOutline(volumes []domain.VolumeOutline, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 分层大纲\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.layeredOutline)
 	ch := 1
 	for _, v := range volumes {
-		fmt.Fprintf(&b, "## 第 %d 卷：%s\n\n", v.Index, v.Title)
-		fmt.Fprintf(&b, "**主题**：%s\n\n", v.Theme)
+		fmt.Fprintf(&b, "## "+l.volumeFmt+"%s%s\n\n", v.Index, l.colon, v.Title)
+		fmt.Fprintf(&b, "**%s**%s%s\n\n", l.theme, l.colon, v.Theme)
 		for _, a := range v.Arcs {
-			fmt.Fprintf(&b, "### 第 %d 弧：%s\n\n", a.Index, a.Title)
-			fmt.Fprintf(&b, "**目标**：%s\n\n", a.Goal)
+			fmt.Fprintf(&b, "### "+l.arcFmt+"%s%s\n\n", a.Index, l.colon, a.Title)
+			fmt.Fprintf(&b, "**%s**%s%s\n\n", l.goal, l.colon, a.Goal)
 			if !a.IsExpanded() {
-				fmt.Fprintf(&b, "*（待展开，预估 %d 章）*\n\n", a.EstimatedChapters)
+				fmt.Fprintf(&b, l.pendingArcFmt+"\n\n", a.EstimatedChapters)
 				continue
 			}
 			for _, e := range a.Chapters {
-				fmt.Fprintf(&b, "#### 第 %d 章：%s\n\n", ch, e.Title)
-				fmt.Fprintf(&b, "**核心事件**：%s\n\n", e.CoreEvent)
+				fmt.Fprintf(&b, "#### "+l.chapterFmt+"%s%s\n\n", ch, l.colon, e.Title)
+				fmt.Fprintf(&b, "**%s**%s%s\n\n", l.coreEvent, l.colon, e.CoreEvent)
 				if e.Hook != "" {
-					fmt.Fprintf(&b, "**钩子**：%s\n\n", e.Hook)
+					fmt.Fprintf(&b, "**%s**%s%s\n\n", l.hook, l.colon, e.Hook)
 				}
 				ch++
 			}
@@ -537,17 +537,17 @@ func renderLayeredOutline(volumes []domain.VolumeOutline) string {
 	return b.String()
 }
 
-func renderOutline(entries []domain.OutlineEntry) string {
+func renderOutline(entries []domain.OutlineEntry, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 大纲\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.outline)
 	for _, e := range entries {
-		fmt.Fprintf(&b, "## 第 %d 章：%s\n\n", e.Chapter, e.Title)
-		fmt.Fprintf(&b, "**核心事件**：%s\n\n", e.CoreEvent)
+		fmt.Fprintf(&b, "## "+l.chapterFmt+"%s%s\n\n", e.Chapter, l.colon, e.Title)
+		fmt.Fprintf(&b, "**%s**%s%s\n\n", l.coreEvent, l.colon, e.CoreEvent)
 		if e.Hook != "" {
-			fmt.Fprintf(&b, "**钩子**：%s\n\n", e.Hook)
+			fmt.Fprintf(&b, "**%s**%s%s\n\n", l.hook, l.colon, e.Hook)
 		}
 		if len(e.Scenes) > 0 {
-			b.WriteString("**场景**：\n")
+			fmt.Fprintf(&b, "**%s**%s\n", l.scenes, l.colon)
 			for i, sc := range e.Scenes {
 				fmt.Fprintf(&b, "%d. %s\n", i+1, sc)
 			}

@@ -15,6 +15,7 @@ import (
 // Store 是状态管理的组合根，持有所有子存储。
 type Store struct {
 	dir string
+	ios []*IO
 
 	Progress       *ProgressStore
 	Book           *BookStore
@@ -51,29 +52,43 @@ type projectFormat struct {
 
 // NewStore 创建状态管理器，dir 为小说输出根目录。
 func NewStore(dir string) *Store {
-	io := newIO(dir)
+	var ios []*IO
+	// mk 记下每个子 store 的 IO：它们各自持锁（互不阻塞），但语种是全书统一的，
+	// 集中登记才能一次设完，不会漏掉将来新增的 store。
+	mk := func() *IO { x := newIO(dir); ios = append(ios, x); return x }
+	io := mk()
 	outline := NewOutlineStore(io)
-	return &Store{
+	s := &Store{
 		dir:            dir,
-		Progress:       NewProgressStore(newIO(dir)),
-		Book:           NewBookStore(newIO(dir)),
+		Progress:       NewProgressStore(mk()),
+		Book:           NewBookStore(mk()),
 		Outline:        outline,
-		Drafts:         NewDraftStore(newIO(dir)),
-		Summaries:      NewSummaryStore(newIO(dir), outline),
-		RunMeta:        NewRunMetaStore(newIO(dir)),
-		UserRules:      NewUserRulesStore(newIO(dir)),
-		Signals:        NewSignalStore(newIO(dir)),
-		Runtime:        NewRuntimeStore(newIO(dir)),
-		Characters:     NewCharacterStore(newIO(dir), outline),
-		Cast:           NewCastStore(newIO(dir)),
-		World:          NewWorldStore(newIO(dir)),
+		Drafts:         NewDraftStore(mk()),
+		Summaries:      NewSummaryStore(mk(), outline),
+		RunMeta:        NewRunMetaStore(mk()),
+		UserRules:      NewUserRulesStore(mk()),
+		Signals:        NewSignalStore(mk()),
+		Runtime:        NewRuntimeStore(mk()),
+		Characters:     NewCharacterStore(mk(), outline),
+		Cast:           NewCastStore(mk()),
+		World:          NewWorldStore(mk()),
 		Checkpoints:    NewCheckpointStore(io),
-		Sessions:       NewSessionStore(newIO(dir)),
-		Usage:          NewUsageStore(newIO(dir)),
-		Simulation:     NewSimulationStore(newIO(dir)),
-		Decisions:      NewDecisionStore(newIO(dir)),
-		ChapterRecords: NewChapterRecordStore(newIO(dir)),
-		Revisions:      NewRevisionStore(newIO(dir)),
+		Sessions:       NewSessionStore(mk()),
+		Usage:          NewUsageStore(mk()),
+		Simulation:     NewSimulationStore(mk()),
+		Decisions:      NewDecisionStore(mk()),
+		ChapterRecords: NewChapterRecordStore(mk()),
+		Revisions:      NewRevisionStore(mk()),
+	}
+	s.ios = ios
+	return s
+}
+
+// SetLanguage 设定作品语种（"vi" / "zh"），影响所有派生 Markdown 视图的标签。
+// 启动时设一次即可；未调用则按上游默认走中文。
+func (s *Store) SetLanguage(lang string) {
+	for _, x := range s.ios {
+		x.SetLanguage(lang)
 	}
 }
 

@@ -49,7 +49,7 @@ func (s *WorldStore) SaveTimeline(events []domain.TimelineEvent) error {
 			s.timelineProjectionReady = false
 			return err
 		}
-		if err := s.io.WriteMarkdownUnlocked("timeline.md", renderTimeline(events)); err != nil {
+		if err := s.io.WriteMarkdownUnlocked("timeline.md", renderTimeline(events, s.io.labels())); err != nil {
 			s.timelineProjectionReady = false
 			return err
 		}
@@ -89,7 +89,7 @@ func (s *WorldStore) AppendTimelineEvents(newEvents []domain.TimelineEvent) erro
 		if len(added) == 0 {
 			return nil
 		}
-		if err := s.io.AppendLineUnlocked("timeline.md", []byte(renderTimelineEntries(added))); err != nil {
+		if err := s.io.AppendLineUnlocked("timeline.md", []byte(renderTimelineEntries(added, s.io.labels()))); err != nil {
 			s.timelineProjectionReady = false
 			return err
 		}
@@ -103,7 +103,7 @@ func (s *WorldStore) ensureTimelineProjectionUnlocked(events []domain.TimelineEv
 	if s.timelineProjectionReady {
 		return nil
 	}
-	expected := renderTimeline(events)
+	expected := renderTimeline(events, s.io.labels())
 	actual, err := s.io.ReadFileUnlocked("timeline.md")
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -141,7 +141,7 @@ func (s *WorldStore) SaveForeshadowLedger(entries []domain.ForeshadowEntry) erro
 		if err := s.io.WriteJSONUnlocked("foreshadow_ledger.json", entries); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("foreshadow_ledger.md", renderForeshadow(entries))
+		return s.io.WriteMarkdownUnlocked("foreshadow_ledger.md", renderForeshadow(entries, s.io.labels()))
 	})
 }
 
@@ -218,7 +218,7 @@ func (s *WorldStore) UpdateForeshadow(chapter int, updates []domain.ForeshadowUp
 		if err := s.io.WriteJSONUnlocked("foreshadow_ledger.json", entries); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("foreshadow_ledger.md", renderForeshadow(entries))
+		return s.io.WriteMarkdownUnlocked("foreshadow_ledger.md", renderForeshadow(entries, s.io.labels()))
 	})
 }
 
@@ -245,7 +245,7 @@ func (s *WorldStore) SaveRelationships(entries []domain.RelationshipEntry) error
 		if err := s.io.WriteJSONUnlocked("relationship_state.json", entries); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("relationship_state.md", renderRelationships(entries))
+		return s.io.WriteMarkdownUnlocked("relationship_state.md", renderRelationships(entries, s.io.labels()))
 	})
 }
 
@@ -287,7 +287,7 @@ func (s *WorldStore) UpdateRelationships(changes []domain.RelationshipEntry) err
 		if err := s.io.WriteJSONUnlocked("relationship_state.json", existing); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("relationship_state.md", renderRelationships(existing))
+		return s.io.WriteMarkdownUnlocked("relationship_state.md", renderRelationships(existing, s.io.labels()))
 	})
 }
 
@@ -323,7 +323,7 @@ func (s *WorldStore) SaveWorldRules(rules []domain.WorldRule) error {
 		if err := s.io.WriteJSONUnlocked("world_rules.json", rules); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("world_rules.md", renderWorldRules(rules))
+		return s.io.WriteMarkdownUnlocked("world_rules.md", renderWorldRules(rules, s.io.labels()))
 	})
 }
 
@@ -516,50 +516,50 @@ func stableRecordKey(chapter int, parts ...string) string {
 	return b.String()
 }
 
-func renderTimeline(events []domain.TimelineEvent) string {
+func renderTimeline(events []domain.TimelineEvent, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 时间线\n\n")
-	b.WriteString(renderTimelineEntries(events))
+	fmt.Fprintf(&b, "# %s\n\n", l.timeline)
+	b.WriteString(renderTimelineEntries(events, l))
 	return b.String()
 }
 
-func renderTimelineEntries(events []domain.TimelineEvent) string {
+func renderTimelineEntries(events []domain.TimelineEvent, l mdLabels) string {
 	var b strings.Builder
 	for _, e := range events {
 		chars := ""
 		if len(e.Characters) > 0 {
-			chars = "（" + strings.Join(e.Characters, "、") + "）"
+			chars = l.openParen + strings.Join(e.Characters, l.listSep) + l.closeParen
 		}
-		fmt.Fprintf(&b, "- **第 %d 章 [%s]**：%s%s\n", e.Chapter, e.Time, e.Event, chars)
+		fmt.Fprintf(&b, "- **"+l.chapterFmt+" [%s]**%s%s%s\n", e.Chapter, e.Time, l.colon, e.Event, chars)
 	}
 	return b.String()
 }
 
-func renderForeshadow(entries []domain.ForeshadowEntry) string {
+func renderForeshadow(entries []domain.ForeshadowEntry, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 伏笔账本\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.foreshadow)
 	for _, e := range entries {
 		status := e.Status
 		if e.ResolvedAt > 0 {
-			status = fmt.Sprintf("已回收（第 %d 章）", e.ResolvedAt)
+			status = fmt.Sprintf(l.resolvedAtFmt, e.ResolvedAt)
 		}
-		fmt.Fprintf(&b, "- **[%s]** %s — 埋设于第 %d 章，状态：%s\n",
+		fmt.Fprintf(&b, "- **[%s]** %s — "+l.plantedAtFmt+"\n",
 			e.ID, e.Description, e.PlantedAt, status)
 	}
 	return b.String()
 }
 
-func renderRelationships(entries []domain.RelationshipEntry) string {
+func renderRelationships(entries []domain.RelationshipEntry, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 人物关系\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.relationships)
 	for _, e := range entries {
-		fmt.Fprintf(&b, "- **%s ↔ %s**：%s（第 %d 章）\n",
-			e.CharacterA, e.CharacterB, e.Relation, e.Chapter)
+		fmt.Fprintf(&b, "- **%s ↔ %s**%s%s"+l.atChapterFmt+"\n",
+			e.CharacterA, e.CharacterB, l.colon, e.Relation, e.Chapter)
 	}
 	return b.String()
 }
 
-func renderWorldRules(rules []domain.WorldRule) string {
+func renderWorldRules(rules []domain.WorldRule, l mdLabels) string {
 	grouped := make(map[string][]domain.WorldRule)
 	var order []string
 	for _, r := range rules {
@@ -574,13 +574,13 @@ func renderWorldRules(rules []domain.WorldRule) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("# 世界观规则\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.worldRules)
 	for _, cat := range order {
 		fmt.Fprintf(&b, "## %s\n\n", cat)
 		for _, r := range grouped[cat] {
-			fmt.Fprintf(&b, "- **规则**：%s\n", r.Rule)
+			fmt.Fprintf(&b, "- **%s**%s%s\n", l.rule, l.colon, r.Rule)
 			if r.Boundary != "" {
-				fmt.Fprintf(&b, "  - 边界：%s\n", r.Boundary)
+				fmt.Fprintf(&b, "  - %s%s%s\n", l.boundary, l.colon, r.Boundary)
 			}
 		}
 		b.WriteString("\n")

@@ -38,10 +38,10 @@ func (s *BookStore) Save(book domain.BookMetadata) error {
 		if err := s.io.WriteJSONUnlocked("meta/book.json", book); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("book.md", renderBook(book))
+		return s.io.WriteMarkdownUnlocked("book.md", renderBook(book, s.io.labels()))
 	})
 }
 
-func renderBook(book domain.BookMetadata) string {
-	return fmt.Sprintf("# 《%s》\n\n## 简介\n\n%s\n", book.Title, book.Synopsis)
+func renderBook(book domain.BookMetadata, l mdLabels) string {
+	return fmt.Sprintf("# "+l.bookTitleFmt+"\n\n## %s\n\n%s\n", book.Title, l.synopsis, book.Synopsis)
 }
