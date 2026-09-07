@@ -50,3 +50,7 @@ config/config.json
 config/models-cache.json
 *.log
 logs/
+config/
+scratch/
+config-laptop/
+workspace-laptop/

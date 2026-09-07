@@ -142,3 +142,93 @@ type WorldRule struct {
 	Rule     string `json:"rule"`     // 规则描述
 	Boundary string `json:"boundary"` // 不可违反的边界
 }
+
+// RenumberVolumes 按位置重排卷与弧的序号，从 1 开始。
+//
+// 规划模型写 index 时并不可靠：常见从 0 起算，甚至给同一卷内每个弧都写 0。
+// 而 ExpandArc / ArcScope 是按 index 值查找的，重复或 0 值会让弧永远无法寻址——
+// 症状要到几步之后 expand_arc 报「参数无效」才浮现，且报错完全指错方向。
+//
+// 数组顺序才是事实，index 只是它的名字，因此在落盘前统一以位置改写。
+func RenumberVolumes(volumes []VolumeOutline) {
+	for vi := range volumes {
+		volumes[vi].Index = vi + 1
+		for ai := range volumes[vi].Arcs {
+			volumes[vi].Arcs[ai].Index = ai + 1
+		}
+	}
+}
+
+// 同一钩子/核心事件重复到此次数即判为大纲空转。2 次可能是有意的两段式，
+// 3 次起没有正当写法：读者被同一个悬念挂三章而无人兑现。
+const (
+	maxHookRepeat      = 3
+	maxCoreEventRepeat = 2
+)
+
+// StalledOutline 检出「原地打转」的大纲：章节标题各异，但钩子或核心事件是同一句
+// 复制多份。此时 Writer 会忠实执行——每章重述上章、再添一点，读起来像改写而非续写。
+//
+// 这类缺陷 Writer 与 Editor 都察觉不到：两者都只看单章，而单章本身自洽。
+// 必须在大纲落盘处按整本比对才拦得住。
+//
+// 返回空串表示通过；否则为可直接回给规划师的中文诊断。
+func StalledOutline(entries []OutlineEntry) string {
+	hooks := map[string]int{}
+	events := map[string]int{}
+	for _, e := range entries {
+		if h := strings.TrimSpace(e.Hook); h != "" {
+			hooks[h]++
+		}
+		if c := strings.TrimSpace(e.CoreEvent); c != "" {
+			events[c]++
+		}
+	}
+	if worst, n := mostRepeated(hooks); n >= maxHookRepeat {
+		return fmt.Sprintf("大纲空转：同一 hook 在 %d/%d 章重复——%q。"+
+			"每章 hook 必须是本章新产生的后果，且由下一章兑现；请逐章改写", n, len(entries), truncateRunes(worst, 40))
+	}
+	if worst, n := mostRepeated(events); n >= maxCoreEventRepeat {
+		return fmt.Sprintf("大纲空转：同一 core_event 在 %d 章重复——%q。"+
+			"每章须发生不同的事并改变处境；请逐章改写", n, truncateRunes(worst, 40))
+	}
+	return ""
+}
+
+func mostRepeated(m map[string]int) (string, int) {
+	var key string
+	best := 0
+	for k, n := range m {
+		if n > best {
+			key, best = k, n
+		}
+	}
+	return key, best
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
+// SkeletonArcs 统计尚未展开的骨架弧，用于完本前置校验。
+//
+// 完本校验只比对扁平大纲，而扁平大纲由 FlattenOutline 从「已展开的弧」派生——
+// 骨架弧贡献 0 章，对该校验完全隐形。实测事故：第 1 卷两个骨架弧共 38 章从未展开，
+// 架构师直接跳到第 2 卷写完 15 章后宣告完本，校验因 next(16) > len(flat)(15) 而放行。
+//
+// 想提前收束仍有正当出口：append_volume 带 "final": true 宣告收官卷。
+func SkeletonArcs(volumes []VolumeOutline) []string {
+	var out []string
+	for vi := range volumes {
+		for ai := range volumes[vi].Arcs {
+			if a := &volumes[vi].Arcs[ai]; !a.IsExpanded() {
+				out = append(out, fmt.Sprintf("第 %d 卷第 %d 弧「%s」", volumes[vi].Index, a.Index, a.Title))
+			}
+		}
+	}
+	return out
+}
