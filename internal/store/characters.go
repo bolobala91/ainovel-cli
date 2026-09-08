@@ -24,7 +24,7 @@ func (s *CharacterStore) Save(chars []domain.Character) error {
 		if err := s.io.WriteJSONUnlocked("characters.json", chars); err != nil {
 			return err
 		}
-		return s.io.WriteMarkdownUnlocked("characters.md", renderCharacters(chars))
+		return s.io.WriteMarkdownUnlocked("characters.md", renderCharacters(chars, s.io.labels()))
 	})
 }
 
@@ -83,17 +83,17 @@ func (s *CharacterStore) LoadLatestSnapshots() ([]domain.CharacterSnapshot, erro
 	return nil, nil
 }
 
-func renderCharacters(chars []domain.Character) string {
+func renderCharacters(chars []domain.Character, l mdLabels) string {
 	var b strings.Builder
-	b.WriteString("# 角色档案\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", l.charProfiles)
 	for _, c := range chars {
-		fmt.Fprintf(&b, "## %s（%s）\n\n", c.Name, c.Role)
+		fmt.Fprintf(&b, "## %s%s%s%s\n\n", c.Name, l.openParen, c.Role, l.closeParen)
 		fmt.Fprintf(&b, "%s\n\n", c.Description)
 		if c.Arc != "" {
-			fmt.Fprintf(&b, "**角色弧线**：%s\n\n", c.Arc)
+			fmt.Fprintf(&b, "**%s**%s%s\n\n", l.charArc, l.colon, c.Arc)
 		}
 		if len(c.Traits) > 0 {
-			fmt.Fprintf(&b, "**特征**：%s\n\n", strings.Join(c.Traits, "、"))
+			fmt.Fprintf(&b, "**%s**%s%s\n\n", l.traits, l.colon, strings.Join(c.Traits, l.listSep))
 		}
 	}
 	return b.String()

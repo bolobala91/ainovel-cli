@@ -691,7 +691,7 @@ func TestCommitChapterRewriteRecoveryUsesFrozenDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadChapterText: %v", err)
 	}
-	if final != "第二章已经完成的重写正文" {
+	if final != "# 冻结标题\n\n第二章已经完成的重写正文" {
 		t.Fatalf("rewrite recovery used overwritten draft: %q", final)
 	}
 	summary, err := s.Summaries.LoadSummary(2)
@@ -878,7 +878,7 @@ func TestCommitChapterReplayAfterPartialCommitDoesNotDuplicateWorldState(t *test
 	if err != nil {
 		t.Fatalf("LoadChapterText: %v", err)
 	}
-	if final != "第一章正文，林墨遇到黑影并突破。" {
+	if final != "# 第一章\n\n第一章正文，林墨遇到黑影并突破。" {
 		t.Fatalf("recovery used overwritten draft: %q", final)
 	}
 }
@@ -1225,7 +1225,8 @@ func TestCommitChapterAllowsTitleOnlyRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if final != body {
+	// 标题由引擎渲染进正文首行，因此只改标题也会改变文件——变的必须只有标题行。
+	if final != "# 更准确的新标题\n\n"+body {
 		t.Fatalf("title-only rewrite changed body: %q", final)
 	}
 }

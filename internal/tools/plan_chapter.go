@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/voocel/agentcore/schema"
 	"github.com/voocel/ainovel-cli/internal/domain"
@@ -57,11 +58,17 @@ func (t *PlanChapterTool) Execute(_ context.Context, args json.RawMessage) (json
 	if plan.Chapter <= 0 {
 		return nil, fmt.Errorf("chapter must be > 0: %w", errs.ErrToolArgs)
 	}
-	completed, err := t.store.Progress.IsChapterCompleted(plan.Chapter)
+	progress, err := t.store.Progress.Load()
 	if err != nil {
 		return nil, fmt.Errorf("load progress: %w: %w", errs.ErrStoreRead, err)
 	}
-	if completed {
+	completed := progress != nil && slices.Contains(progress.CompletedChapters, plan.Chapter)
+	// 返工队列里的章节是唯一例外：已完成却要重写时，"该重写成什么样"必须有地方落盘，
+	// 而 Contract（goal / payoff_points / continuity_checks / hook_goal）正是那份指令。
+	// 此前这里一律拒绝，导致 revise_outline（只许改未写章节）、save_foundation(outline)
+	// （写作期禁止全量覆盖）与本工具三路皆堵——架构师无处可写重写方向，实测空转 4 次后熔断。
+	queuedForRewrite := progress != nil && slices.Contains(progress.PendingRewrites, plan.Chapter)
+	if completed && !queuedForRewrite {
 		return json.Marshal(map[string]any{
 			"chapter":   plan.Chapter,
 			"skipped":   true,

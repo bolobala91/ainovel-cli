@@ -11,9 +11,16 @@ import (
 // IO 封装文件系统读写操作，提供加锁和原子写入。
 // 每个子存储持有独立的 IO 实例，拥有各自的 sync.RWMutex。
 type IO struct {
-	dir string
-	mu  sync.RWMutex
+	dir  string
+	lang string
+	mu   sync.RWMutex
 }
+
+// SetLanguage 设定作品语种（"vi" / "zh"），影响派生 Markdown 视图的标签。
+// 启动时设一次；空值按上游默认走中文。
+func (io *IO) SetLanguage(lang string) { io.lang = lang }
+
+func (io *IO) labels() mdLabels { return labelsFor(io.lang) }
 
 func newIO(dir string) *IO {
 	return &IO{dir: dir}

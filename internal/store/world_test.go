@@ -174,7 +174,7 @@ func TestTimeline_MigratesLegacyAndAppendsProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read timeline.md: %v", err)
 	}
-	if string(markdown) != renderTimeline(loaded) {
+	if string(markdown) != renderTimeline(loaded, labelsZH) {
 		t.Fatalf("timeline projection not synchronized:\n%s", markdown)
 	}
 }
@@ -549,7 +549,7 @@ func TestRenderWorldRules(t *testing.T) {
 		{Category: "magic", Rule: "法术消耗精神力", Boundary: "精神力耗尽会昏迷"},
 		{Category: "society", Rule: "贵族有裁判权"},
 		{Category: "magic", Rule: "禁咒需三人", Boundary: "单人施放会死"},
-	})
+	}, labelsZH)
 
 	// magic 分组应在 society 之前
 	if strings.Index(md, "## magic") >= strings.Index(md, "## society") {
