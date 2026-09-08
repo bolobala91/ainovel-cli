@@ -486,6 +486,9 @@ func (t *ContextTool) buildChapterWorkingMemory(envelope *chapterContextEnvelope
 		}
 		if len(state.progress.HookHistory) > 0 {
 			checkpoint["hook_history"] = state.progress.HookHistory
+			// 同时给出计数：只给序列，模型会自己数，而且数错——实测 Editor 连续三次
+			// 报"约 18/22 章是 mystery"，真实值是 16。凡是能算的事实都由代码算好再交给它。
+			checkpoint["hook_type_counts"] = countByValue(state.progress.HookHistory)
 		}
 		envelope.Working["checkpoint"] = checkpoint
 	}
@@ -888,4 +891,16 @@ func (t *ContextTool) buildArchitectReferences(envelope *architectContextEnvelop
 	}
 
 	envelope.References["references"] = t.architectReferences()
+}
+
+// countByValue 统计取值频次，供上下文里"可数事实"直接落成数字。
+func countByValue(values []string) map[string]int {
+	out := make(map[string]int, len(values))
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		out[v]++
+	}
+	return out
 }

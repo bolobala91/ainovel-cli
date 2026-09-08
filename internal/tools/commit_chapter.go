@@ -415,7 +415,7 @@ func (t *CommitChapterTool) Execute(_ context.Context, args json.RawMessage) (js
 	}
 
 	// 机械规则是输出的一部分，必须在 ProgressMarked 前固化，恢复时直接返回同一输出。
-	violations := t.checkRules(content)
+	violations := t.checkRules(content, a.Chapter)
 	output, err := json.Marshal(commitOutput{CommitResult: result, RuleViolations: violations})
 	if err != nil {
 		return nil, fmt.Errorf("marshal commit output: %w", err)
@@ -536,13 +536,29 @@ func (t *CommitChapterTool) appendCommitCheckpoint(chapter int) error {
 
 // checkRules 对章节正文做机械检查：内置产品底线 Lint（机制残留，始终执行）
 // + 用户规则 Check（读本书快照的 structured；快照缺失退到内置默认，保证机械底线始终在）。
-func (t *CommitChapterTool) checkRules(text string) []rules.Violation {
+func (t *CommitChapterTool) checkRules(text string, chapter int) []rules.Violation {
 	violations := rules.Lint(text)
 	structured := rules.SystemDefaults().Structured
 	if snap, err := t.store.UserRules.Load(); err == nil && snap != nil {
 		structured = snap.Structured
 	}
-	return append(violations, rules.Check(text, structured)...)
+	violations = append(violations, rules.Check(text, structured)...)
+	return append(violations, rules.CheckAgainstPrevious(text, t.previousChapters(chapter))...)
+}
+
+// previousChapters 读取紧邻的前几章终稿，供"新章是否照抄上一章"比对。
+// 单章读失败或为空一律跳过：这是补充度量，不能让它拖垮提交主干。
+func (t *CommitChapterTool) previousChapters(chapter int) []string {
+	const lookback = 2
+	var out []string
+	for ch := chapter - 1; ch >= 1 && ch >= chapter-lookback; ch-- {
+		text, err := t.store.Drafts.LoadChapterText(ch)
+		if err != nil || strings.TrimSpace(text) == "" {
+			continue
+		}
+		out = append(out, text)
+	}
+	return out
 }
 
 // executeRewriteCommit 处理打磨/重写章节的提交：覆盖终稿与摘要、更新字数、drain 队列。
@@ -712,7 +728,7 @@ func (t *CommitChapterTool) executeRewriteCommit(a commitArgs, progress *domain.
 	}
 
 	// 同主路径：rewrite/polish 也做机械检查并持久化(重写后落新记录,旧违规视为已清)
-	violations := t.checkRules(content)
+	violations := t.checkRules(content, a.Chapter)
 	output, err := json.Marshal(map[string]any{
 		"chapter": chapter, "rewritten": true, "mode": mode, "word_count": wordCount,
 		"remaining_queue": remaining, "queue_drained": drained, "next_chapter": nextChapter,
