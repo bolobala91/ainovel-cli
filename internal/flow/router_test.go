@@ -383,3 +383,41 @@ func TestRoute_PlanningFillDispatchesSamePlanner(t *testing.T) {
 		t.Fatalf("缺项已齐时不应派补齐,got %+v", got)
 	}
 }
+
+// Chương trong hàng viết lại mà chưa có chỉ thị: chỉ thị phải yêu cầu writer
+// lập kế hoạch trước. Không đổi agent — chèn thêm một lượt điều phối sẽ khiến
+// hàng đợi không bao giờ rút nếu bước lập kế hoạch thất bại.
+func TestRoute_RewriteWithoutDirectiveAsksWriterToPlanFirst(t *testing.T) {
+	s := State{
+		Progress: &domain.Progress{
+			Phase:           domain.PhaseWriting,
+			Flow:            domain.FlowRewriting,
+			PendingRewrites: []int{13},
+		},
+		RewriteHeadNeedsDirective: true,
+	}
+	inst := Route(s)
+	if inst == nil || inst.Agent != "writer" || inst.Chapter != 13 {
+		t.Fatalf("phải vẫn điều writer cho chương 13, nhận %+v", inst)
+	}
+	if !strings.Contains(inst.Task, "plan_chapter") {
+		t.Errorf("chỉ thị phải yêu cầu lập kế hoạch trước: %q", inst.Task)
+	}
+}
+
+func TestRoute_RewriteWithDirectiveGoesStraightToWriting(t *testing.T) {
+	s := State{
+		Progress: &domain.Progress{
+			Phase:           domain.PhaseWriting,
+			Flow:            domain.FlowRewriting,
+			PendingRewrites: []int{13},
+		},
+	}
+	inst := Route(s)
+	if inst == nil || inst.Agent != "writer" {
+		t.Fatalf("phải điều writer, nhận %+v", inst)
+	}
+	if strings.Contains(inst.Task, "plan_chapter") {
+		t.Errorf("đã có chỉ thị thì không nhắc lập kế hoạch nữa: %q", inst.Task)
+	}
+}

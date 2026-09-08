@@ -92,6 +92,13 @@ func Validate(facts domain.ChapterFacts) error {
 		if strings.TrimSpace(update.ID) == "" {
 			return fmt.Errorf("foreshadow_updates[%d].id is required", i)
 		}
+		if placeholderForeshadowID(update.ID) {
+			return fmt.Errorf(
+				"foreshadow_updates[%d].id = %q 是占位符，不是标识符。每条伏笔要一个唯一且稳定的 id"+
+					"（如 FORESHADOW_OBSERVER、jade-pendant），后续章节靠它 advance/resolve；"+
+					"复用占位符会让新伏笔撞上旧条目",
+				i, update.ID)
+		}
 		switch update.Action {
 		case "plant":
 			if strings.TrimSpace(update.Description) == "" {
@@ -139,4 +146,17 @@ func validateTextItems(name string, items []string) error {
 		}
 	}
 	return nil
+}
+
+// placeholderForeshadowIDs 是模型常写进 id 字段的占位词。它们本身没有标识作用，
+// 而伏笔 id 必须跨章稳定——实测模型把每条新伏笔都命名为 "new"，第二条起就撞上
+// 第一条，被静默丢弃：22 章里 plant 了 6 次，最终只入账 2 条。
+var placeholderForeshadowIDs = map[string]struct{}{
+	"new": {}, "none": {}, "null": {}, "nil": {}, "tbd": {}, "todo": {},
+	"auto": {}, "id": {}, "-": {}, "n/a": {}, "na": {}, "unknown": {}, "?": {},
+}
+
+func placeholderForeshadowID(id string) bool {
+	_, ok := placeholderForeshadowIDs[strings.ToLower(strings.TrimSpace(id))]
+	return ok
 }

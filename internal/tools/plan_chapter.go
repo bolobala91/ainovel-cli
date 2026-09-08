@@ -86,8 +86,14 @@ func (t *PlanChapterTool) Execute(_ context.Context, args json.RawMessage) (json
 	if err := t.store.Drafts.SaveChapterPlan(plan); err != nil {
 		return nil, fmt.Errorf("save chapter plan: %w", err)
 	}
-	if err := t.store.Progress.StartChapter(plan.Chapter); err != nil {
-		return nil, fmt.Errorf("mark chapter in progress: %w", err)
+	// 记录返工指令不等于开始写这一章：Engine 在派发 writer 时已预标进行中
+	// (engine.go)，draft_chapter 落笔时也会再标一次，所以这里对返工章是多余的。
+	// 而 StartChapter 会无条件改写 InProgressChapter 并清空 CompletedScenes——
+	// 若规划者为队列里的第 20 章写指令、而 writer 正在第 13 章，指针会被拽走。
+	if !queuedForRewrite || progress.InProgressChapter == plan.Chapter {
+		if err := t.store.Progress.StartChapter(plan.Chapter); err != nil {
+			return nil, fmt.Errorf("mark chapter in progress: %w", err)
+		}
 	}
 
 	if _, err := t.store.Checkpoints.AppendArtifact(

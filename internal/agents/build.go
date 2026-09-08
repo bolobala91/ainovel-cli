@@ -124,6 +124,9 @@ func BuildWorkers(
 		tools.NewSaveBookTool(store),
 		tools.NewSaveFoundationTool(store),
 		tools.NewReviseOutlineTool(store),
+		// 返工队列里的章节只能靠 chapter_contract 承接"该重写成什么样"：
+		// revise_outline 不许碰已写章节，save_foundation(outline) 写作期禁止全量覆盖。
+		tools.NewPlanChapterTool(store),
 		tools.NewResolveOutlineFeedbackTool(store),
 		tools.NewAuditFoundationTool(store),
 	}

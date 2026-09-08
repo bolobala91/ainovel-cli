@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // ChapterPlan 章节写作构思，Writer 自主生成。
 // 不再强制场景拆分，Agent 自己决定如何组织内容。
 type ChapterPlan struct {
@@ -126,4 +128,15 @@ type CommitResult struct {
 	BookComplete bool `json:"book_complete,omitempty"`
 	// 当前 Progress.Flow 快照（writing / reviewing / rewriting / polishing）
 	Flow string `json:"flow,omitempty"`
+}
+
+// HasDirective 判断这份章节规划是否真的说清了"该写成什么样"。
+//
+// 空规划与没有规划等价：返工时只列缺陷、不给方向，Writer 拿到的仍旧只是
+// "重写第 N 章"一句话——实测 Editor 把这判为队列里最严重的一条问题。
+func (p ChapterPlan) HasDirective() bool {
+	return strings.TrimSpace(p.Goal) != "" ||
+		len(p.Contract.RequiredBeats) > 0 ||
+		len(p.Contract.PayoffPoints) > 0 ||
+		len(p.Contract.ContinuityChecks) > 0
 }

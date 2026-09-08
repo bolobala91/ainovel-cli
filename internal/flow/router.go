@@ -85,6 +85,11 @@ type State struct {
 
 	// 外部修订后最早一个需要由 Editor 重新生成的弧/卷工件。
 	AggregateRefresh *AggregateRefresh
+
+	// 返工队首章是否还没有重写指令（chapter_contract）。
+	// 只给 writer 一句"重写第 N 章"等于不给方向：实测 Editor 判定队列里最严重的
+	// 问题就是 architect_directive_unclear——症状列了一堆，却没说该写成什么样。
+	RewriteHeadNeedsDirective bool
 }
 
 // Route 根据事实返回下一步确定性指令；返回 nil 由 Engine 按调用上下文处理。
@@ -138,9 +143,19 @@ func Route(s State) *Instruction {
 		if p.Flow == domain.FlowPolishing {
 			verb = "打磨"
 		}
+		task := fmt.Sprintf("%s第 %d 章", verb, ch)
+		if s.RewriteHeadNeedsDirective {
+			// 只说"重写第 N 章"等于没给方向：实测 Editor 把 architect_directive_unclear
+			// 判为返工队列里最严重的一条。这里不另派规划师——多插一次派单会让
+			// 规划失败时队列永远排不空——而是要求 Writer 自己先把方向落成契约再动笔。
+			task += fmt.Sprintf(
+				"。本章尚无 chapter_contract：请先调 plan_chapter(chapter=%d) 写清重写目标"+
+					"（goal 要回答\"改成什么样\"，而不是复述\"哪里错了\"；"+
+					"必要时补 payoff_points / continuity_checks / hook_goal），再据此重写正文", ch)
+		}
 		return &Instruction{
 			Agent:   "writer",
-			Task:    fmt.Sprintf("%s第 %d 章", verb, ch),
+			Task:    task,
 			Reason:  fmt.Sprintf("PendingRewrites 队列剩余 %d 章", len(p.PendingRewrites)),
 			Chapter: ch,
 		}

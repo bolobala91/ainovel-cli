@@ -47,6 +47,16 @@ func LoadState(store *storepkg.Store) (State, error) {
 
 	s.LastCompleted = progress.LatestCompleted()
 
+	// 返工队首若还没有 chapter_contract，先让规划师补一份再派 writer。
+	// 读失败按"已有指令"处理：这是引导性分支，不能让一次读盘失败卡住返工。
+	if len(progress.PendingRewrites) > 0 {
+		head := progress.PendingRewrites[0]
+		plan, err := store.Drafts.LoadChapterPlan(head)
+		if err == nil {
+			s.RewriteHeadNeedsDirective = plan == nil || !plan.HasDirective()
+		}
+	}
+
 	// 弧边界仅在分层模式且有已完成章节时才计算
 	if progress.Layered && s.LastCompleted > 0 {
 		boundaries, err := store.Outline.CompletedArcBoundaries(s.LastCompleted)

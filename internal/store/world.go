@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/voocel/ainovel-cli/internal/domain"
+	"github.com/voocel/ainovel-cli/internal/errs"
 	"github.com/voocel/ainovel-cli/internal/rules"
 )
 
@@ -180,6 +181,16 @@ func (s *WorldStore) UpdateForeshadow(chapter int, updates []domain.ForeshadowUp
 					return fmt.Errorf("plant foreshadow %q requires description", u.ID)
 				}
 				if i, ok := idx[u.ID]; ok {
+					// 同一章重复 plant 是章节记录全量重放，必须幂等；不同章撞上同一个 id
+					// 则是新伏笔被旧条目挡住——此前这里一律 continue，新伏笔连同描述被静默丢弃。
+					// 实测一本 22 章的书 plant 了 6 次却只入账 2 条，模型每次都用同一个占位 id
+					//（"1" 与 "new"），4 条伏笔无声蒸发，且没有任何一处报错。
+					if planted := entries[i].PlantedAt; planted != 0 && planted != chapter {
+						return fmt.Errorf(
+							"伏笔 id %q 已被第 %d 章占用（%s）；每条伏笔需要各自唯一且稳定的 id，"+
+								"不要复用 \"new\"/\"1\" 这类占位符——后续章节靠 id 找回它来 advance/resolve: %w",
+							u.ID, planted, truncateForError(entries[i].Description), errs.ErrToolArgs)
+					}
 					if entries[i].Description == "" {
 						entries[i].Description = u.Description
 					}
@@ -637,4 +648,13 @@ func (s *WorldStore) LoadRuleViolations(chapter int) []rules.Violation {
 		return nil
 	}
 	return latest
+}
+
+// truncateForError 截短描述，避免把整段伏笔正文塞进错误消息。
+func truncateForError(s string) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= 30 {
+		return string(r)
+	}
+	return string(r[:30]) + "…"
 }
