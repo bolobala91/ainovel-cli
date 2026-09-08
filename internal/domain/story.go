@@ -232,3 +232,29 @@ func SkeletonArcs(volumes []VolumeOutline) []string {
 	}
 	return out
 }
+
+// maxArcChapters 是单弧详细章节数的上限。
+//
+// 约束来自弧末评审，不是叙事口味：Editor 在弧边界必须读完整弧才能出审阅意见。
+// 实测一弧 20 章 = 113792 字 ≈ 37k token 的正文，叠加大纲/快照/提示后没有任何
+// 可用模型吃得下——本地 32k 窗口装不进，云端免费档在 8 tok/s 下反复断流 14 次，
+// 最终整条流水线卡死在弧边界。8 章 ≈ 45k 字 ≈ 15k token，两侧都留有余量。
+//
+// 这也是结构上的好事：把 20 章塞进一弧，本身就说明弧目标没有收敛。
+const maxArcChapters = 8
+
+// OversizedArc 检查一个弧的规模是否超限，超限返回可直接回给规划师的中文诊断。
+// 返回空串表示通过。
+//
+// chapters 取"详细章节数"与"骨架预估章数"的较大者：骨架阶段就写下 estimated=20 的弧，
+// 到 expand_arc 时必然撞上同一道墙，而那已是二十章之后——结构问题要在结构落盘时就报。
+func OversizedArc(label string, chapters int) string {
+	if chapters <= maxArcChapters {
+		return ""
+	}
+	return fmt.Sprintf("%s 详细章节 %d 章，超过单弧上限 %d 章。"+
+		"弧末评审需一次读完整弧，过长的弧任何模型都无法审阅（实测 20 章即卡死流水线）。"+
+		"请把它拆成多个各自有独立目标的弧：先用本次调用只展开前 %d 章内的第一个弧，"+
+		"其余留作骨架弧，写到边界时再展开",
+		label, chapters, maxArcChapters, maxArcChapters)
+}

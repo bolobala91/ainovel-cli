@@ -61,3 +61,28 @@ func TestSkeletonArcsSilentWhenAllExpanded(t *testing.T) {
 		t.Fatalf("không được báo khi mọi cung đã khai triển, nhận %v", got)
 	}
 }
+
+// Tái hiện sự cố thật: Cung 2 khai triển 20 chương (113792 ký tự ≈ 37k token),
+// khiến thẩm định biên cung không model nào đọc nổi và cả pipeline kẹt cứng.
+func TestOversizedArcCatchesTwentyChapterArc(t *testing.T) {
+	got := OversizedArc("Tập 1 cung 2", 20)
+	if got == "" {
+		t.Fatal("cung 20 chương phải bị bác")
+	}
+	for _, want := range []string{"20", "8", "tách"} {
+		if !strings.Contains(got, want) && !strings.Contains(got, "拆") {
+			t.Errorf("chẩn đoán thiếu thông tin %q: %s", want, got)
+		}
+	}
+}
+
+func TestOversizedArcAcceptsNormalArc(t *testing.T) {
+	for _, n := range []int{1, 5, 8} {
+		if got := OversizedArc("cung", n); got != "" {
+			t.Errorf("cung %d chương phải hợp lệ, nhận: %s", n, got)
+		}
+	}
+	if OversizedArc("cung", 9) == "" {
+		t.Error("cung 9 chương phải bị bác")
+	}
+}

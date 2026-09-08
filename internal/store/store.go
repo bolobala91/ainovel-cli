@@ -359,7 +359,13 @@ func (s *Store) ReviseOutline(fromChapter int, replacement []domain.OutlineEntry
 		protected = latest
 	}
 	if fromChapter <= protected {
-		return 0, fmt.Errorf("第 %d 章已完成或正在写作；大纲修订必须从第 %d 章之后开始: %w",
+		// 只报"不许改"会把调用方逼进死路：实测架构师在此连试 4 次（from=21/22/13，
+		// 再退到 save_foundation(outline)）全被拒，空转到熔断。错误必须同时说明谁负责
+		// 返工，否则架构师会继续在自己的工具集里找一个并不存在的出口。
+		return 0, fmt.Errorf(
+			"第 %d 章已完成或正在写作；revise_outline 只能修订尚未发生的章节，必须从第 %d 章之后开始。"+
+				"pending_rewrites 中的已写章节不归大纲修订管：返工由 writer 按队列执行；"+
+				"架构师若无未来章节需要改写，请调 resolve_outline_feedback 确认现有规划仍适用后结束: %w",
 			fromChapter, protected, errs.ErrToolPrecondition)
 	}
 

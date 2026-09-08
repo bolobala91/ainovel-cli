@@ -24,7 +24,7 @@ func NewSaveFoundationTool(store *store.Store) *SaveFoundationTool {
 
 func (t *SaveFoundationTool) Name() string { return "save_foundation" }
 func (t *SaveFoundationTool) Description() string {
-	return "保存小说基础设定（premise/outline/characters/world_rules/compass 等）。**这是唯一持久化入口**：未经此工具调用保存的内容不会进入 store，只在消息里输出 Markdown/JSON 等于丢失。参数固定为 {type, content, scale?, volume?, arc?}。type 可选 premise / outline / layered_outline / characters / world_rules / expand_arc / append_volume / update_compass / complete_book。premise 时 content 必须是 Markdown 字符串；其他类型 content 优先直接传 JSON 数组或对象。expand_arc 校准并展开一个未写骨架弧（需 volume + arc，content 为 {title, goal, chapters}，可依据已完成正文修订原骨架目标）；append_volume 追加新卷（content 为完整 VolumeOutline JSON，含弧结构；顶层带 \"final\": true 即宣告收官卷——全书在该卷收束，所有章节写完后自动完结，无需再调 complete_book）；update_compass 更新终局方向（content 为 StoryCompass JSON，字段仅 {ending_direction: string 必填, open_threads?: string[], estimated_scale?: string}，其余字段一律不认）；complete_book 宣告全书完结（content 传空对象 {}，直接推 Phase=Complete；工具会校验：大纲内章节已全部写完、无返工队列、compass 无未收束 open_threads——确认长线已收束须先 update_compass 清空 open_threads 落盘，想提前收束用 append_volume 的 final 收官卷）。append_volume / complete_book 必须带 reason 参数（一句话判定理由，对照完结判定清单，记入裁定审计）。scale 可选，仅允许 short / mid / long。"
+	return "保存小说基础设定（premise/outline/characters/world_rules/compass 等）。**这是唯一持久化入口**：未经此工具调用保存的内容不会进入 store，只在消息里输出 Markdown/JSON 等于丢失。参数固定为 {type, content, scale?, volume?, arc?}。type 可选 premise / outline / layered_outline / characters / world_rules / expand_arc / append_volume / update_compass / complete_book。premise 时 content 必须是 Markdown 字符串；其他类型 content 优先直接传 JSON 数组或对象。expand_arc 校准并展开一个未写骨架弧（单弧详细章节不得超过 8 章——弧末评审需一次读完整弧，过长无法审阅；超限请拆成多个弧，需 volume + arc，content 为 {title, goal, chapters}，可依据已完成正文修订原骨架目标）；append_volume 追加新卷（content 为完整 VolumeOutline JSON，含弧结构；顶层带 \"final\": true 即宣告收官卷——全书在该卷收束，所有章节写完后自动完结，无需再调 complete_book）；update_compass 更新终局方向（content 为 StoryCompass JSON，字段仅 {ending_direction: string 必填, open_threads?: string[], estimated_scale?: string}，其余字段一律不认）；complete_book 宣告全书完结（content 传空对象 {}，直接推 Phase=Complete；工具会校验：大纲内章节已全部写完、无返工队列、compass 无未收束 open_threads——确认长线已收束须先 update_compass 清空 open_threads 落盘，想提前收束用 append_volume 的 final 收官卷）。append_volume / complete_book 必须带 reason 参数（一句话判定理由，对照完结判定清单，记入裁定审计）。scale 可选，仅允许 short / mid / long。"
 }
 func (t *SaveFoundationTool) Label() string { return "保存设定" }
 
@@ -175,6 +175,15 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := decode("layered_outline", &volumes); err != nil {
 			return nil, err
 		}
+		for vi := range volumes {
+			for ai := range volumes[vi].Arcs {
+				arc := &volumes[vi].Arcs[ai]
+				if defect := domain.OversizedArc(
+					fmt.Sprintf("第 %d 卷第 %d 弧", volumes[vi].Index, arc.Index), arcPlannedSize(arc)); defect != "" {
+					return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
+				}
+			}
+		}
 		if defect := domain.StalledOutline(domain.FlattenOutline(volumes)); defect != "" {
 			return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
 		}
@@ -231,6 +240,10 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		if err := decode("expand_arc", &expansion); err != nil {
 			return nil, err
 		}
+		if defect := domain.OversizedArc(
+			fmt.Sprintf("第 %d 卷第 %d 弧", a.Volume, a.Arc), len(expansion.Chapters)); defect != "" {
+			return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
+		}
 		if err := t.store.ExpandArc(a.Volume, a.Arc, expansion); err != nil {
 			return nil, fmt.Errorf("expand arc: %w: %w", errs.ErrStoreWrite, err)
 		}
@@ -254,6 +267,13 @@ func (t *SaveFoundationTool) Execute(_ context.Context, args json.RawMessage) (j
 		var vol domain.VolumeOutline
 		if err := decode("append_volume", &vol); err != nil {
 			return nil, err
+		}
+		for i := range vol.Arcs {
+			arc := &vol.Arcs[i]
+			if defect := domain.OversizedArc(
+				fmt.Sprintf("新卷第 %d 弧", arc.Index), arcPlannedSize(arc)); defect != "" {
+				return nil, fmt.Errorf("%s: %w", defect, errs.ErrToolArgs)
+			}
 		}
 		prior, err := t.store.Outline.LoadLayeredOutline()
 		if err != nil {
@@ -503,4 +523,12 @@ func (t *SaveFoundationTool) consumeWriterFeedback() error {
 		return fmt.Errorf("clear outline feedback: %w: %w", errs.ErrStoreWrite, err)
 	}
 	return nil
+}
+
+// arcPlannedSize 取弧的实际规模：已展开用详细章节数，仍是骨架则用预估章数。
+func arcPlannedSize(arc *domain.ArcOutline) int {
+	if n := len(arc.Chapters); n > 0 {
+		return n
+	}
+	return arc.EstimatedChapters
 }
